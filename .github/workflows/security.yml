@@ -1,0 +1,36 @@
+name: Symfony SAST & Security Checks
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  schedule:
+    - cron: '0 0 * * 0' # ריצה אוטומטית פעם בשבוע
+
+jobs:
+  security-scan:
+    name: Run SAST and Vulnerability Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2' # מומלץ לשנות לגרסת ה-PHP של הפרויקט שלך
+          tools: composer:v2, local-php-security-checker, psalm
+          coverage: none
+
+      - name: Install Composer Dependencies
+        run: composer install --prefer-dist --no-progress --no-scripts
+
+      - name: Check Composer Dependencies for Known Vulnerabilities (CVEs)
+        run: local-php-security-checker
+        # כלי זה בודק את קובץ ה-composer.lock מול מאגר חולשות ידועות ויתריע אם יש ספרייה פגיעה.
+
+      - name: Run SAST via Psalm (Taint Analysis)
+        run: psalm --taint-analysis
+        # Taint Analysis עוקב אחר קלט המשתמש ומוודא שהוא לא מגיע לפונקציות מסוכנות ללא נרמול וסינון.
