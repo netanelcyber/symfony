@@ -21,6 +21,8 @@ use Symfony\Bridge\Doctrine\ArgumentResolver\Console\EntityValueResolver;
 use Symfony\Bridge\Doctrine\Attribute\MapEntity;
 use Symfony\Component\Console\ArgumentResolver\Exception\NearMissValueResolverException;
 use Symfony\Component\Console\ArgumentResolver\ValueResolver\ValueResolverInterface;
+use Symfony\Component\Console\Attribute\Argument;
+use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Attribute\Reflection\ReflectionMember;
 use Symfony\Component\Console\Exception\RuntimeException;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -480,51 +482,37 @@ class EntityValueResolverTest extends TestCase
 
     private function createMember(string $name, string $type, ?MapEntity $entity = null, bool $nullable = false, bool $withArgument = true, bool $asOption = false): ReflectionMember
     {
-        $nullablePrefix = $nullable || $asOption ? '?' : '';
         if ($asOption) {
-            $inputAttribute = '#[\\Symfony\\Component\\Console\\Attribute\\Option]';
-            $defaultSuffix = ' = null';
+            $method = 'optionEntity';
+        } elseif (!$withArgument) {
+            $method = 'noAttributeEntity';
+        } elseif ($nullable) {
+            $method = 'argumentNullableEntity';
+        } elseif ('array' === $type) {
+            $method = 'argumentArrayEntity';
         } else {
-            $inputAttribute = $withArgument ? '#[\\Symfony\\Component\\Console\\Attribute\\Argument]' : '';
-            $defaultSuffix = '';
-        }
-        $mapEntityAttribute = $entity ? \sprintf('#[\\Symfony\\Bridge\\Doctrine\\Attribute\\MapEntity(%s)]', $this->mapEntityToString($entity)) : '';
-
-        $command = eval(\sprintf('return new class {
-            public function __invoke(
-                %s
-                %s
-                %s%s $%s%s
-            ) {}
-        };', $inputAttribute, $mapEntityAttribute, $nullablePrefix, $type, $name, $defaultSuffix));
-
-        $reflection = new \ReflectionMethod($command, '__invoke');
-        $parameter = $reflection->getParameters()[0];
-
-        return new ReflectionMember($parameter);
-    }
-
-    private function mapEntityToString(MapEntity $entity): string
-    {
-        $parts = [];
-
-        if (null !== $entity->class) {
-            $parts[] = \sprintf('class: %s', var_export($entity->class, true));
-        }
-        if (null !== $entity->id) {
-            $parts[] = \sprintf('id: %s', var_export($entity->id, true));
-        }
-        if (null !== $entity->mapping) {
-            $parts[] = \sprintf('mapping: %s', var_export($entity->mapping, true));
-        }
-        if (false !== $entity->stripNull) {
-            $parts[] = 'stripNull: true';
-        }
-        if (null !== $entity->expr) {
-            $parts[] = \sprintf('expr: %s', var_export($entity->expr, true));
+            $method = 'argumentEntity';
         }
 
-        return implode(', ', $parts);
+        $parameter = (new \ReflectionMethod(EntityValueResolverFixture::class, $method))->getParameters()[0];
+
+        return new class($parameter, $entity) extends ReflectionMember {
+            public function __construct(
+                \ReflectionParameter $parameter,
+                private readonly ?MapEntity $mapEntity = null,
+            ) {
+                parent::__construct($parameter);
+            }
+
+            public function getAttribute(string $class): ?object
+            {
+                if (MapEntity::class === $class) {
+                    return $this->mapEntity;
+                }
+
+                return parent::getAttribute($class);
+            }
+        };
     }
 
     private function createRegistry(?ObjectManager $manager = null): ManagerRegistry
@@ -543,5 +531,28 @@ class EntityValueResolverTest extends TestCase
         }
 
         return $registry;
+    }
+}
+
+class EntityValueResolverFixture
+{
+    public function argumentEntity(#[Argument] \stdClass $entity): void
+    {
+    }
+
+    public function argumentNullableEntity(#[Argument] ?\stdClass $entity = null): void
+    {
+    }
+
+    public function argumentArrayEntity(#[Argument] array $entity): void
+    {
+    }
+
+    public function optionEntity(#[Option] ?\stdClass $entity = null): void
+    {
+    }
+
+    public function noAttributeEntity(\stdClass $entity): void
+    {
     }
 }
